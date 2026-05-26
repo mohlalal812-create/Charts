@@ -80,6 +80,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .conv-info{flex:1;min-width:0;}
 .conv-name{font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .conv-preview{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.conv-last-seen{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;font-style:italic;}
 .conv-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
 .conv-time{font-size:11px;color:var(--muted);}
 .conv-unread{background:var(--accent);color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
@@ -162,16 +163,37 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   -webkit-touch-callout:none;
   background:inherit;
 }
-.msg-row.mine .bubble-wrapper{
-  background:var(--me);
-}
-.msg-row.theirs .bubble-wrapper{
-  background:var(--them);
-}
+.msg-row.mine .bubble-wrapper{background:var(--me);}
+.msg-row.theirs .bubble-wrapper{background:var(--them);}
 .msg-row.mine .bubble{color:#fff;}
 .msg-row.theirs .bubble{color:var(--text);}
-.btime{font-size:10px;color:rgba(255,255,255,.5);margin-top:4px;text-align:right;}
-.msg-row.theirs .btime{color:var(--muted);text-align:left;}
+
+/* Message status (read receipts) */
+.msg-status{
+  display:inline-flex;
+  align-items:center;
+  gap:2px;
+  margin-left:4px;
+  font-size:11px;
+  vertical-align:middle;
+}
+.msg-status.sent{color:rgba(255,255,255,.5);}
+.msg-status.delivered{color:rgba(255,255,255,.5);}
+.msg-status.read{color:#4FC3F7;}
+
+.btime{
+  font-size:10px;
+  color:rgba(255,255,255,.5);
+  margin-top:4px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:3px;
+}
+.msg-row.theirs .btime{
+  color:var(--muted);
+  justify-content:flex-start;
+}
 
 /* REACTIONS */
 .reaction-badge{
@@ -407,15 +429,17 @@ const db   = firebase.database();
 
 let myUser=null, localStream=null, peerConn=null;
 let isMuted=false, isCamOff=false, isSignUp=false, typingTimer=null;
-let activePeerUid=null, activePeerName=null, msgListener=null, typingListener=null, reactionListener=null;
+let activePeerUid=null, activePeerName=null, msgListener=null, typingListener=null, reactionListener=null, readReceiptListener=null;
 let allUsers = {};
 let replyToMsgId=null, replyToText=null;
 let longPressTimer=null, longPressTriggered=false, currentReactionMsgId=null;
+let chatOpenTimestamp=null;
+let lastSeenInterval=null;
 
 // Swipe state
 let swipeStartX=0, swipeStartY=0, swipeCurrentWrapper=null;
-const SWIPE_THRESHOLD=60; // pixels to trigger reply
-const SWIPE_MAX_Y=30; // max vertical deviation (to distinguish from scroll)
+const SWIPE_THRESHOLD=60;
+const SWIPE_MAX_Y=30;
 
 const rtcConfig={iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]};
 
@@ -490,6 +514,21 @@ function watchUsers(){
   });
 }
 
+function timeAgo(ts){
+  if(!ts)return '';
+  const diff=Date.now()-ts;
+  const sec=Math.floor(diff/1000);
+  const min=Math.floor(sec/60);
+  const hr=Math.floor(min/60);
+  const day=Math.floor(hr/24);
+  
+  if(sec<60)return 'just now';
+  if(min<60)return `${min}m ago`;
+  if(hr<24)return `${hr}h ago`;
+  if(day<7)return `${day}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
 function renderConvList(){
   const list=document.getElementById('conv-list');
   list.innerHTML='';
@@ -503,6 +542,12 @@ function renderConvList(){
     const div=document.createElement('div');
     div.className='conv-item'+(activePeerUid===uid?' active':'');
     div.dataset.uid=uid;
+    
+    let lastSeenHtml='';
+    if(!u.online && u.lastSeen){
+      lastSeenHtml=`<div class="conv-last-seen">last seen ${timeAgo(u.lastSeen)}</div>`;
+    }
+    
     div.innerHTML=`
       <div class="conv-av">
         ${u.username[0].toUpperCase()}
@@ -510,7 +555,7 @@ function renderConvList(){
       </div>
       <div class="conv-info">
         <div class="conv-name">${esc(u.username)}</div>
-        <div class="conv-preview">${u.online?'Online':'Offline'}</div>
+        ${u.online?'<div class="conv-preview">Online</div>':lastSeenHtml}
       </div>`;
     div.addEventListener('click',()=>openChat(uid,u.username));
     list.appendChild(div);
@@ -522,10 +567,22 @@ function openChat(uid, uname){
   if(msgListener){msgListener();msgListener=null;}
   if(typingListener){typingListener();typingListener=null;}
   if(reactionListener){reactionListener();reactionListener=null;}
+  if(readReceiptListener){readReceiptListener();readReceiptListener=null;}
+
+  // Mark previous chat's messages as read before switching
+  if(activePeerUid && activePeerUid!==uid){
+    markMessagesAsRead(activePeerUid);
+  }
 
   activePeerUid=uid;
   activePeerName=uname;
+  chatOpenTimestamp=Date.now();
   clearReply();
+
+  // Update last seen display
+  updateLastSeenDisplay();
+  if(lastSeenInterval)clearInterval(lastSeenInterval);
+  lastSeenInterval=setInterval(updateLastSeenDisplay, 30000);
 
   document.querySelectorAll('.conv-item').forEach(el=>el.classList.toggle('active',el.dataset.uid===uid));
   document.getElementById('chat-panel').classList.add('open');
@@ -540,6 +597,10 @@ function openChat(uid, uname){
   loadDM(uid);
   watchTyping(uid);
   watchReactions(uid);
+  watchReadReceipts(uid);
+
+  // Mark messages as read when chat opens
+  setTimeout(()=>markMessagesAsRead(uid), 500);
 }
 
 function updateChatHeader(uid){
@@ -547,19 +608,118 @@ function updateChatHeader(uid){
   document.getElementById('ch-av').textContent=(u.username||'?')[0].toUpperCase();
   document.getElementById('ch-name').textContent=u.username||'Unknown';
   const st=document.getElementById('ch-status');
-  st.textContent=u.online?'Online':'Offline';
-  st.className='chat-header-status'+(u.online?' on':'');
+  
+  if(u.online){
+    st.textContent='Online';
+    st.className='chat-header-status on';
+  }else if(u.lastSeen){
+    st.textContent=`last seen ${timeAgo(u.lastSeen)}`;
+    st.className='chat-header-status';
+  }else{
+    st.textContent='Offline';
+    st.className='chat-header-status';
+  }
+  
   document.getElementById('ch-vcall').onclick=()=>startCall(uid,u.username);
 }
 
+function updateLastSeenDisplay(){
+  if(!activePeerUid)return;
+  const u=allUsers[activePeerUid];
+  if(!u)return;
+  const st=document.getElementById('ch-status');
+  if(!u.online && u.lastSeen){
+    st.textContent=`last seen ${timeAgo(u.lastSeen)}`;
+    st.className='chat-header-status';
+  }else if(u.online){
+    st.textContent='Online';
+    st.className='chat-header-status on';
+  }
+}
+
 document.getElementById('back-btn').addEventListener('click',()=>{
+  // Mark messages as read when leaving chat
+  if(activePeerUid){
+    markMessagesAsRead(activePeerUid);
+  }
+  
   document.getElementById('chat-panel').classList.remove('open');
   activePeerUid=null;
+  chatOpenTimestamp=null;
   if(msgListener){msgListener();msgListener=null;}
   if(typingListener){typingListener();typingListener=null;}
   if(reactionListener){reactionListener();reactionListener=null;}
+  if(readReceiptListener){readReceiptListener();readReceiptListener=null;}
+  if(lastSeenInterval){clearInterval(lastSeenInterval);lastSeenInterval=null;}
   clearReply();
 });
+
+// ── READ RECEIPTS ──
+function markMessagesAsRead(peerUid){
+  if(!myUser || !peerUid)return;
+  const key=dmKey(myUser.uid, peerUid);
+  const ref=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`);
+  
+  // Get messages sent by the OTHER person that haven't been read
+  ref.orderByChild('senderUid').equalTo(peerUid).once('value').then(snap=>{
+    const updates={};
+    snap.forEach(child=>{
+      const msg=child.val();
+      if(!msg.readStatus || msg.readStatus==='delivered'){
+        updates[`${child.key}/readStatus`]='read';
+        updates[`${child.key}/readTimestamp`]=Date.now();
+      }
+    });
+    if(Object.keys(updates).length>0){
+      ref.update(updates);
+    }
+  });
+}
+
+function watchReadReceipts(peerUid){
+  const key=dmKey(myUser.uid, peerUid);
+  const ref=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`);
+  
+  const handler=ref.on('child_changed',snap=>{
+    const msgId=snap.key;
+    const msg=snap.val();
+    // Only update status for my messages
+    if(msg.senderUid===myUser.uid){
+      updateMessageStatus(msgId, msg.readStatus);
+    }
+  });
+  
+  readReceiptListener=()=>ref.off('child_changed',handler);
+}
+
+function updateMessageStatus(msgId, status){
+  const row=document.querySelector(`.msg-row[data-msg-id="${msgId}"]`);
+  if(!row)return;
+  const bubble=row.querySelector('.bubble');
+  const timeEl=bubble.querySelector('.btime');
+  if(!timeEl)return;
+
+  // Remove existing status
+  const existingStatus=timeEl.querySelector('.msg-status');
+  if(existingStatus)existingStatus.remove();
+
+  // Add new status
+  const statusEl=document.createElement('span');
+  statusEl.className='msg-status';
+  
+  if(status==='read'){
+    statusEl.classList.add('read');
+    statusEl.innerHTML='✓✓';
+  }else if(status==='delivered'){
+    statusEl.classList.add('delivered');
+    statusEl.innerHTML='✓✓';
+  }else{
+    statusEl.classList.add('sent');
+    statusEl.innerHTML='✓';
+  }
+  
+  timeEl.appendChild(statusEl);
+}
 
 // ── DM MESSAGES ──
 function loadDM(peerUid){
@@ -569,7 +729,26 @@ function loadDM(peerUid){
   const key=dmKey(myUser.uid,peerUid);
   const ref=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`);
   const handler=ref.limitToLast(100).on('child_added',snap=>{
-    appendMsg(snap.key, snap.val());
+    const msg=snap.val();
+    const msgId=snap.key;
+    
+    // Auto-mark as delivered if it's from the other person and I'm viewing the chat
+    if(msg.senderUid!==myUser.uid && !msg.readStatus && activePeerUid===peerUid){
+      ref.child(msgId).update({
+        readStatus:'delivered',
+        deliveredTimestamp:Date.now()
+      }).then(()=>{
+        // If chat is open, also mark as read
+        if(activePeerUid===peerUid){
+          ref.child(msgId).update({
+            readStatus:'read',
+            readTimestamp:Date.now()
+          });
+        }
+      });
+    }
+    
+    appendMsg(msgId, msg);
   });
   msgListener=()=>ref.off('child_added',handler);
 }
@@ -587,12 +766,27 @@ function appendMsg(msgId, msg){
     replyHtml=`<div class="reply-ref">↩ ${esc(msg.replyTo.text.substring(0,50))}${msg.replyTo.text.length>50?'...':''}</div>`;
   }
 
+  // Status icon for my messages
+  let statusHtml='';
+  if(me){
+    let statusClass='sent';
+    let statusIcon='✓';
+    if(msg.readStatus==='read'){
+      statusClass='read';
+      statusIcon='✓✓';
+    }else if(msg.readStatus==='delivered'){
+      statusClass='delivered';
+      statusIcon='✓✓';
+    }
+    statusHtml=`<span class="msg-status ${statusClass}">${statusIcon}</span>`;
+  }
+
   row.innerHTML=`
     <div class="bubble-wrapper">
       <div class="swipe-reply-indicator">↩️</div>
       <div class="bubble">
         ${replyHtml}${esc(msg.text)}
-        <div class="btime">${t}</div>
+        <div class="btime">${t}${statusHtml}</div>
       </div>
     </div>`;
 
@@ -616,7 +810,6 @@ function appendMsg(msgId, msg){
 
 // ── SWIPE TO REPLY ──
 function attachSwipeEvents(wrapper, bubble, msgId, msg){
-  // Touch events
   wrapper.addEventListener('touchstart',function(e){
     swipeStartX=e.touches[0].clientX;
     swipeStartY=e.touches[0].clientY;
@@ -629,7 +822,6 @@ function attachSwipeEvents(wrapper, bubble, msgId, msg){
     const dx=e.touches[0].clientX - swipeStartX;
     const dy=Math.abs(e.touches[0].clientY - swipeStartY);
 
-    // Only allow right swipe if horizontal movement dominates
     if(dx>10 && dx>dy*1.5){
       e.preventDefault();
       const clampedX=Math.min(dx, SWIPE_THRESHOLD+20);
@@ -648,7 +840,6 @@ function attachSwipeEvents(wrapper, bubble, msgId, msg){
     handleSwipeEnd(wrapper, msgId, msg);
   });
 
-  // Mouse events for desktop
   wrapper.addEventListener('mousedown',function(e){
     swipeStartX=e.clientX;
     swipeStartY=e.clientY;
@@ -657,7 +848,7 @@ function attachSwipeEvents(wrapper, bubble, msgId, msg){
   });
 
   wrapper.addEventListener('mousemove',function(e){
-    if(swipeCurrentWrapper!==wrapper || !e.buttons)return; // only if mouse button held
+    if(swipeCurrentWrapper!==wrapper || !e.buttons)return;
     const dx=e.clientX - swipeStartX;
     const dy=Math.abs(e.clientY - swipeStartY);
 
@@ -693,15 +884,12 @@ function handleSwipeEnd(wrapper, msgId, msg){
   const indicator=wrapper.querySelector('.swipe-reply-indicator');
   
   if(dx >= SWIPE_THRESHOLD){
-    // Trigger reply!
     setReply(msgId, msg);
-    // Animate back
     setTimeout(()=>{
       wrapper.style.transform='translateX(0px)';
       indicator.classList.remove('visible');
     }, 100);
   }else{
-    // Snap back
     wrapper.style.transform='translateX(0px)';
     indicator.classList.remove('visible');
   }
@@ -724,7 +912,6 @@ function getCurrentTranslateX(el){
 // ── LONG PRESS FOR REACTION ──
 function attachLongPressEvents(bubble, msgId){
   bubble.addEventListener('touchstart',function(e){
-    // Don't start long press if we're in a swipe
     if(swipeCurrentWrapper)return;
     startLongPress(e, bubble, msgId);
   },{passive:false});
@@ -853,7 +1040,6 @@ function setReply(msgId, msg){
   document.getElementById('reply-preview').style.display='flex';
   document.getElementById('msg-input').focus();
   
-  // Haptic feedback if available
   if(navigator.vibrate)navigator.vibrate(10);
 }
 
@@ -876,7 +1062,8 @@ function sendMsg(){
   const msgData={
     senderUid:myUser.uid,
     text,
-    timestamp:Date.now()
+    timestamp:Date.now(),
+    readStatus:'sent'
   };
 
   if(replyToMsgId && replyToText){
@@ -935,6 +1122,10 @@ document.getElementById('share-btn').addEventListener('click',()=>{
   else prompt('Copy this link:',url);
 });
 document.getElementById('so-btn').addEventListener('click',async()=>{
+  if(activePeerUid){
+    markMessagesAsRead(activePeerUid);
+  }
+  if(lastSeenInterval){clearInterval(lastSeenInterval);lastSeenInterval=null;}
   await db.ref(`rooms/${ROOM_ID}/presence/${myUser.uid}`).update({online:false});
   clearTyping(); endCall(); auth.signOut();
 });
