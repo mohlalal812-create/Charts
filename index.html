@@ -117,12 +117,59 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;scroll-behavior:smooth;}
 .messages::-webkit-scrollbar{width:4px;}
 .messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
-.msg-row{display:flex;width:100%;position:relative;}
+.msg-row{display:flex;width:100%;position:relative;overflow:hidden;}
 .msg-row.mine{justify-content:flex-end;}
 .msg-row.theirs{justify-content:flex-start;}
-.bubble{max-width:72%;padding:10px 14px;border-radius:18px;font-size:14px;line-height:1.5;word-break:break-word;position:relative;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;}
-.msg-row.mine .bubble{background:var(--me);border-bottom-right-radius:4px;color:#fff;}
-.msg-row.theirs .bubble{background:var(--them);border-bottom-left-radius:4px;color:var(--text);}
+
+/* Swipe container */
+.bubble-wrapper{
+  position:relative;
+  overflow:hidden;
+  border-radius:18px;
+  transition:transform 0.2s ease;
+}
+.msg-row.mine .bubble-wrapper{border-bottom-right-radius:4px;}
+.msg-row.theirs .bubble-wrapper{border-bottom-left-radius:4px;}
+
+/* Reply icon that shows when swiping */
+.swipe-reply-indicator{
+  position:absolute;
+  left:0;top:0;bottom:0;
+  width:60px;
+  background:var(--accent);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:24px;
+  color:#fff;
+  border-radius:18px 0 0 18px;
+  opacity:0;
+  transition:opacity 0.15s;
+  pointer-events:none;
+}
+.swipe-reply-indicator.visible{opacity:1;}
+
+.bubble{
+  max-width:100%;
+  padding:10px 14px;
+  font-size:14px;
+  line-height:1.5;
+  word-break:break-word;
+  position:relative;
+  cursor:pointer;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
+  background:inherit;
+}
+.msg-row.mine .bubble-wrapper{
+  background:var(--me);
+}
+.msg-row.theirs .bubble-wrapper{
+  background:var(--them);
+}
+.msg-row.mine .bubble{color:#fff;}
+.msg-row.theirs .bubble{color:var(--text);}
 .btime{font-size:10px;color:rgba(255,255,255,.5);margin-top:4px;text-align:right;}
 .msg-row.theirs .btime{color:var(--muted);text-align:left;}
 
@@ -162,7 +209,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .reply-preview .rp-cancel{cursor:pointer;font-size:18px;color:var(--red);flex-shrink:0;padding:0 4px;}
 .reply-preview .rp-cancel:hover{opacity:.7;}
 
-/* Reaction picker (global) */
+/* Reaction picker */
 #react-picker-overlay{
   display:none;position:fixed;inset:0;z-index:300;
   background:transparent;
@@ -309,7 +356,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   </div>
 </div>
 
-<!-- Reaction picker overlay + picker -->
+<!-- Reaction picker -->
 <div id="react-picker-overlay"></div>
 <div id="react-picker">
   <span data-emoji="👍">👍</span>
@@ -364,6 +411,11 @@ let activePeerUid=null, activePeerName=null, msgListener=null, typingListener=nu
 let allUsers = {};
 let replyToMsgId=null, replyToText=null;
 let longPressTimer=null, longPressTriggered=false, currentReactionMsgId=null;
+
+// Swipe state
+let swipeStartX=0, swipeStartY=0, swipeCurrentWrapper=null;
+const SWIPE_THRESHOLD=60; // pixels to trigger reply
+const SWIPE_MAX_Y=30; // max vertical deviation (to distinguish from scroll)
 
 const rtcConfig={iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]};
 
@@ -467,7 +519,6 @@ function renderConvList(){
 
 // ── OPEN CHAT ──
 function openChat(uid, uname){
-  // Detach old listeners
   if(msgListener){msgListener();msgListener=null;}
   if(typingListener){typingListener();typingListener=null;}
   if(reactionListener){reactionListener();reactionListener=null;}
@@ -537,9 +588,12 @@ function appendMsg(msgId, msg){
   }
 
   row.innerHTML=`
-    <div class="bubble">
-      ${replyHtml}${esc(msg.text)}
-      <div class="btime">${t}</div>
+    <div class="bubble-wrapper">
+      <div class="swipe-reply-indicator">↩️</div>
+      <div class="bubble">
+        ${replyHtml}${esc(msg.text)}
+        <div class="btime">${t}</div>
+      </div>
     </div>`;
 
   // Add reaction badge if exists
@@ -554,23 +608,137 @@ function appendMsg(msgId, msg){
   c.scrollTop=c.scrollHeight;
 
   // Attach event handlers
+  const wrapper=row.querySelector('.bubble-wrapper');
   const bubble=row.querySelector('.bubble');
-  attachBubbleEvents(bubble, msgId, msg);
+  attachSwipeEvents(wrapper, bubble, msgId, msg);
+  attachLongPressEvents(bubble, msgId);
 }
 
-function attachBubbleEvents(bubble, msgId, msg){
-  // Touch events for long press
-  bubble.addEventListener('touchstart',function(e){startLongPress(e, bubble, msgId);},{passive:false});
-  bubble.addEventListener('touchend',function(e){endLongPress(e, bubble, msgId, msg);});
+// ── SWIPE TO REPLY ──
+function attachSwipeEvents(wrapper, bubble, msgId, msg){
+  // Touch events
+  wrapper.addEventListener('touchstart',function(e){
+    swipeStartX=e.touches[0].clientX;
+    swipeStartY=e.touches[0].clientY;
+    swipeCurrentWrapper=wrapper;
+    wrapper.style.transition='none';
+  },{passive:true});
+
+  wrapper.addEventListener('touchmove',function(e){
+    if(swipeCurrentWrapper!==wrapper)return;
+    const dx=e.touches[0].clientX - swipeStartX;
+    const dy=Math.abs(e.touches[0].clientY - swipeStartY);
+
+    // Only allow right swipe if horizontal movement dominates
+    if(dx>10 && dx>dy*1.5){
+      e.preventDefault();
+      const clampedX=Math.min(dx, SWIPE_THRESHOLD+20);
+      wrapper.style.transform=`translateX(${clampedX}px)`;
+      const indicator=wrapper.querySelector('.swipe-reply-indicator');
+      if(dx>SWIPE_THRESHOLD/2){
+        indicator.classList.add('visible');
+      }else{
+        indicator.classList.remove('visible');
+      }
+    }
+  },{passive:false});
+
+  wrapper.addEventListener('touchend',function(e){
+    if(swipeCurrentWrapper!==wrapper)return;
+    handleSwipeEnd(wrapper, msgId, msg);
+  });
+
+  // Mouse events for desktop
+  wrapper.addEventListener('mousedown',function(e){
+    swipeStartX=e.clientX;
+    swipeStartY=e.clientY;
+    swipeCurrentWrapper=wrapper;
+    wrapper.style.transition='none';
+  });
+
+  wrapper.addEventListener('mousemove',function(e){
+    if(swipeCurrentWrapper!==wrapper || !e.buttons)return; // only if mouse button held
+    const dx=e.clientX - swipeStartX;
+    const dy=Math.abs(e.clientY - swipeStartY);
+
+    if(dx>10 && dx>dy*1.5){
+      e.preventDefault();
+      const clampedX=Math.min(dx, SWIPE_THRESHOLD+20);
+      wrapper.style.transform=`translateX(${clampedX}px)`;
+      const indicator=wrapper.querySelector('.swipe-reply-indicator');
+      if(dx>SWIPE_THRESHOLD/2){
+        indicator.classList.add('visible');
+      }else{
+        indicator.classList.remove('visible');
+      }
+    }
+  });
+
+  wrapper.addEventListener('mouseup',function(e){
+    if(swipeCurrentWrapper!==wrapper)return;
+    handleSwipeEnd(wrapper, msgId, msg);
+  });
+
+  wrapper.addEventListener('mouseleave',function(){
+    if(swipeCurrentWrapper===wrapper){
+      resetSwipe(wrapper);
+      swipeCurrentWrapper=null;
+    }
+  });
+}
+
+function handleSwipeEnd(wrapper, msgId, msg){
+  wrapper.style.transition='transform 0.2s ease';
+  const dx=getCurrentTranslateX(wrapper);
+  const indicator=wrapper.querySelector('.swipe-reply-indicator');
+  
+  if(dx >= SWIPE_THRESHOLD){
+    // Trigger reply!
+    setReply(msgId, msg);
+    // Animate back
+    setTimeout(()=>{
+      wrapper.style.transform='translateX(0px)';
+      indicator.classList.remove('visible');
+    }, 100);
+  }else{
+    // Snap back
+    wrapper.style.transform='translateX(0px)';
+    indicator.classList.remove('visible');
+  }
+  swipeCurrentWrapper=null;
+}
+
+function resetSwipe(wrapper){
+  wrapper.style.transition='transform 0.2s ease';
+  wrapper.style.transform='translateX(0px)';
+  const indicator=wrapper.querySelector('.swipe-reply-indicator');
+  if(indicator)indicator.classList.remove('visible');
+}
+
+function getCurrentTranslateX(el){
+  const style=el.style.transform;
+  const match=style.match(/translateX\((\d+)px\)/);
+  return match ? parseInt(match[1]) : 0;
+}
+
+// ── LONG PRESS FOR REACTION ──
+function attachLongPressEvents(bubble, msgId){
+  bubble.addEventListener('touchstart',function(e){
+    // Don't start long press if we're in a swipe
+    if(swipeCurrentWrapper)return;
+    startLongPress(e, bubble, msgId);
+  },{passive:false});
+  bubble.addEventListener('touchend',function(e){endLongPress(e, msgId);});
   bubble.addEventListener('touchmove',function(){cancelLongPress();});
 
-  // Mouse events for long press (desktop)
-  bubble.addEventListener('mousedown',function(e){startLongPress(e, bubble, msgId);});
-  bubble.addEventListener('mouseup',function(e){endLongPress(e, bubble, msgId, msg);});
+  bubble.addEventListener('mousedown',function(e){
+    if(swipeCurrentWrapper)return;
+    startLongPress(e, bubble, msgId);
+  });
+  bubble.addEventListener('mouseup',function(e){endLongPress(e, msgId);});
   bubble.addEventListener('mouseleave',function(){cancelLongPress();});
 }
 
-// ── LONG PRESS / REACTION ──
 function startLongPress(e, bubble, msgId){
   if(e.type==='touchstart')e.preventDefault();
   longPressTriggered=false;
@@ -582,14 +750,10 @@ function startLongPress(e, bubble, msgId){
   }, 600);
 }
 
-function endLongPress(e, bubble, msgId, msg){
+function endLongPress(e, msgId){
   if(longPressTimer){
     clearTimeout(longPressTimer);
     longPressTimer=null;
-  }
-  if(!longPressTriggered){
-    // It was a short tap - trigger reply
-    setReply(msgId, msg);
   }
   longPressTriggered=false;
 }
@@ -607,11 +771,9 @@ function showReactionPicker(bubble, msgId){
   const overlay=document.getElementById('react-picker-overlay');
   const rect=bubble.getBoundingClientRect();
 
-  // Position picker above the bubble
   let top=rect.top - 60;
   let left=rect.left + rect.width/2;
 
-  // Keep in viewport
   if(top<10)top=rect.bottom+10;
   if(left<80)left=80;
   if(left>window.innerWidth-80)left=window.innerWidth-80;
@@ -622,7 +784,6 @@ function showReactionPicker(bubble, msgId){
   picker.classList.add('show');
   overlay.style.display='block';
 
-  // Auto-hide after 3s
   clearTimeout(picker._hideTimeout);
   picker._hideTimeout=setTimeout(hideReactionPicker, 3000);
 }
@@ -633,10 +794,8 @@ function hideReactionPicker(){
   currentReactionMsgId=null;
 }
 
-// Reaction picker overlay click to close
 document.getElementById('react-picker-overlay').addEventListener('click',hideReactionPicker);
 
-// Emoji selection
 document.querySelectorAll('#react-picker span').forEach(span=>{
   span.addEventListener('click',function(e){
     e.stopPropagation();
@@ -648,7 +807,6 @@ document.querySelectorAll('#react-picker span').forEach(span=>{
     const key=dmKey(myUser.uid, activePeerUid);
     const msgRef=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages/${msgId}`);
 
-    // Toggle reaction: set if different, remove if same
     msgRef.once('value').then(snap=>{
       const current=snap.val();
       if(current && current.reaction===emoji){
@@ -662,7 +820,6 @@ document.querySelectorAll('#react-picker span').forEach(span=>{
   });
 });
 
-// Watch for reaction updates
 function watchReactions(peerUid){
   const key=dmKey(myUser.uid, peerUid);
   const ref=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`);
@@ -695,6 +852,9 @@ function setReply(msgId, msg){
   document.getElementById('rp-text').textContent=msg.text.substring(0,70)+(msg.text.length>70?'...':'');
   document.getElementById('reply-preview').style.display='flex';
   document.getElementById('msg-input').focus();
+  
+  // Haptic feedback if available
+  if(navigator.vibrate)navigator.vibrate(10);
 }
 
 function clearReply(){
@@ -719,7 +879,6 @@ function sendMsg(){
     timestamp:Date.now()
   };
 
-  // Attach reply info
   if(replyToMsgId && replyToText){
     msgData.replyTo={
       msgId: replyToMsgId,
