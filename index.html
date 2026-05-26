@@ -88,7 +88,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .no-contacts p{font-size:14px;}
 
 /* CHAT PANEL */
-.chat-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.chat-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
 .chat-header{
   background:var(--card);border-bottom:1px solid var(--border);
   padding:10px 14px;display:flex;align-items:center;gap:12px;flex-shrink:0;
@@ -114,13 +114,13 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;
 }
 
-.messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:4px;scroll-behavior:smooth;}
+.messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;scroll-behavior:smooth;}
 .messages::-webkit-scrollbar{width:4px;}
 .messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
 .msg-row{display:flex;width:100%;position:relative;}
 .msg-row.mine{justify-content:flex-end;}
 .msg-row.theirs{justify-content:flex-start;}
-.bubble{max-width:72%;padding:10px 14px;border-radius:18px;font-size:14px;line-height:1.5;word-break:break-word;position:relative;cursor:pointer;user-select:none;-webkit-user-select:none;}
+.bubble{max-width:72%;padding:10px 14px;border-radius:18px;font-size:14px;line-height:1.5;word-break:break-word;position:relative;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;}
 .msg-row.mine .bubble{background:var(--me);border-bottom-right-radius:4px;color:#fff;}
 .msg-row.theirs .bubble{background:var(--them);border-bottom-left-radius:4px;color:var(--text);}
 .btime{font-size:10px;color:rgba(255,255,255,.5);margin-top:4px;text-align:right;}
@@ -128,40 +128,60 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 
 /* REACTIONS */
 .reaction-badge{
-  position:absolute;bottom:-8px;right:8px;
+  position:absolute;bottom:-10px;right:6px;
   background:var(--card);border:1px solid var(--border);
-  border-radius:12px;padding:2px 6px;font-size:13px;
-  line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);
-  display:flex;align-items:center;gap:2px;z-index:5;
+  border-radius:12px;padding:2px 7px;font-size:14px;
+  line-height:1.2;box-shadow:0 2px 8px rgba(0,0,0,.4);
+  z-index:5;cursor:default;
 }
-.msg-row.theirs .reaction-badge{right:auto;left:8px;}
-.react-picker{
-  position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
-  background:var(--card);border:1px solid var(--border);
-  border-radius:24px;padding:6px 10px;display:none;
-  gap:6px;z-index:50;box-shadow:0 8px 30px rgba(0,0,0,.5);
-  white-space:nowrap;
-}
-.react-picker.show{display:flex;}
-.react-picker span{font-size:22px;cursor:pointer;transition:transform .15s;padding:2px;}
-.react-picker span:hover{transform:scale(1.3);}
+.msg-row.theirs .reaction-badge{right:auto;left:6px;}
 
-/* REPLY */
-.reply-preview{
-  display:none;align-items:center;gap:8px;
-  padding:8px 14px;background:var(--bg);
-  border-left:3px solid var(--accent);margin:0 12px;
-  border-radius:8px;font-size:12px;color:var(--muted);
-  flex-shrink:0;
-}
-.reply-preview .rp-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.reply-preview .rp-cancel{cursor:pointer;font-size:16px;color:var(--red);flex-shrink:0;}
+/* Reply reference inside bubble */
 .reply-ref{
-  font-size:11px;color:var(--accent);margin-bottom:3px;
-  padding-left:2px;border-left:2px solid var(--accent);padding:2px 6px;
-  background:rgba(99,102,241,.1);border-radius:4px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;
+  font-size:11px;color:rgba(255,255,255,.7);margin-bottom:4px;
+  padding:4px 8px;background:rgba(255,255,255,.1);
+  border-left:3px solid rgba(255,255,255,.5);border-radius:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;
 }
+.msg-row.theirs .reply-ref{
+  color:var(--muted);
+  background:rgba(0,0,0,.1);
+  border-left-color:var(--accent);
+}
+
+/* Reply preview bar */
+.reply-preview{
+  display:none;align-items:center;gap:10px;
+  padding:10px 14px;background:var(--bg);
+  border-left:4px solid var(--accent);margin:0;
+  border-radius:0;font-size:13px;color:var(--muted);
+  flex-shrink:0;border-top:1px solid var(--border);
+}
+.reply-preview .rp-label{color:var(--accent);font-weight:600;flex-shrink:0;}
+.reply-preview .rp-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.reply-preview .rp-cancel{cursor:pointer;font-size:18px;color:var(--red);flex-shrink:0;padding:0 4px;}
+.reply-preview .rp-cancel:hover{opacity:.7;}
+
+/* Reaction picker (global) */
+#react-picker-overlay{
+  display:none;position:fixed;inset:0;z-index:300;
+  background:transparent;
+}
+#react-picker{
+  display:none;position:fixed;
+  background:var(--card);border:2px solid var(--border);
+  border-radius:30px;padding:8px 14px;
+  gap:10px;z-index:301;
+  box-shadow:0 12px 40px rgba(0,0,0,.7);
+  white-space:nowrap;align-items:center;
+}
+#react-picker.show{display:flex;}
+#react-picker span{
+  font-size:28px;cursor:pointer;
+  transition:transform .15s;padding:4px;
+  display:inline-block;
+}
+#react-picker span:hover{transform:scale(1.4);}
 
 .typing{display:none;padding:0 16px 8px;font-size:12px;color:var(--muted);font-style:italic;}
 .input-bar{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;background:var(--card);flex-shrink:0;}
@@ -170,7 +190,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .send-btn{width:42px;height:42px;border-radius:12px;flex-shrink:0;background:var(--orange);border:none;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .2s;}
 .send-btn:hover{opacity:.85;}
 
-/* EMPTY STATE (no chat selected on desktop) */
+/* EMPTY STATE */
 .no-chat-selected{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);}
 .no-chat-selected .emo{font-size:52px;}
 .no-chat-selected p{font-size:15px;}
@@ -198,14 +218,12 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 
 /* RESPONSIVE */
 @media(max-width:768px){
-  /* On mobile: conv list fills screen, chat panel slides in */
   .conv-list-panel{max-width:100%;border-right:none;}
   .chat-panel{position:absolute;inset:0;background:var(--bg);z-index:10;display:none;flex-direction:column;}
   .chat-panel.open{display:flex;}
   .back-btn{display:flex!important;}
   .vwrap{flex:1 1 100%;max-width:100%;}
   .vwrap video{height:180px;}
-  /* Fix: topbar area for absolute chat panel */
   #app-screen{position:relative;}
 }
 @media(min-width:769px){
@@ -260,14 +278,12 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 
     <!-- Chat panel -->
     <div class="chat-panel" id="chat-panel">
-      <!-- shown when no chat is selected (desktop) -->
       <div class="no-chat-selected" id="no-chat-msg">
         <span class="emo">🔒</span>
         <p>Select someone to start chatting</p>
       </div>
 
-      <!-- actual chat UI (hidden until person selected) -->
-      <div id="active-chat" style="display:none;flex:1;flex-direction:column;overflow:hidden;display:none;">
+      <div id="active-chat" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
         <div class="chat-header">
           <button class="back-btn" id="back-btn">‹</button>
           <div class="chat-header-av" id="ch-av">?</div>
@@ -279,7 +295,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
         </div>
         <div class="messages" id="messages"></div>
         <div class="reply-preview" id="reply-preview">
-          <span>↩️ Replying to:</span>
+          <span class="rp-label">↩️ Replying</span>
           <span class="rp-text" id="rp-text"></span>
           <span class="rp-cancel" id="rp-cancel">✕</span>
         </div>
@@ -293,14 +309,15 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   </div>
 </div>
 
-<!-- Reaction picker (global, positioned absolutely) -->
-<div class="react-picker" id="react-picker">
+<!-- Reaction picker overlay + picker -->
+<div id="react-picker-overlay"></div>
+<div id="react-picker">
   <span data-emoji="👍">👍</span>
   <span data-emoji="❤️">❤️</span>
   <span data-emoji="😂">😂</span>
   <span data-emoji="😮">😮</span>
   <span data-emoji="😢">😢</span>
-  <span data-emoji="😡">😡</span>
+  <span data-emoji="🔥">🔥</span>
 </div>
 
 <!-- VIDEO -->
@@ -343,14 +360,13 @@ const db   = firebase.database();
 
 let myUser=null, localStream=null, peerConn=null;
 let isMuted=false, isCamOff=false, isSignUp=false, typingTimer=null;
-let activePeerUid=null, activePeerName=null, msgListener=null, typingListener=null;
+let activePeerUid=null, activePeerName=null, msgListener=null, typingListener=null, reactionListener=null;
 let allUsers = {};
-let replyToMsgId=null, replyToText=null; // reply state
-let longPressTimer=null, currentReactionMsgId=null;
+let replyToMsgId=null, replyToText=null;
+let longPressTimer=null, longPressTriggered=false, currentReactionMsgId=null;
 
 const rtcConfig={iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]};
 
-// DM key: always sort UIDs so both sides use the same key
 function dmKey(a,b){return [a,b].sort().join('_');}
 
 // ── AUTH ──
@@ -451,11 +467,16 @@ function renderConvList(){
 
 // ── OPEN CHAT ──
 function openChat(uid, uname){
+  // Detach old listeners
+  if(msgListener){msgListener();msgListener=null;}
+  if(typingListener){typingListener();typingListener=null;}
+  if(reactionListener){reactionListener();reactionListener=null;}
+
   activePeerUid=uid;
   activePeerName=uname;
+  clearReply();
 
   document.querySelectorAll('.conv-item').forEach(el=>el.classList.toggle('active',el.dataset.uid===uid));
-
   document.getElementById('chat-panel').classList.add('open');
   document.getElementById('no-chat-msg').style.display='none';
   const ac=document.getElementById('active-chat');
@@ -467,7 +488,7 @@ function openChat(uid, uname){
   updateChatHeader(uid);
   loadDM(uid);
   watchTyping(uid);
-  clearReply();
+  watchReactions(uid);
 }
 
 function updateChatHeader(uid){
@@ -485,6 +506,7 @@ document.getElementById('back-btn').addEventListener('click',()=>{
   activePeerUid=null;
   if(msgListener){msgListener();msgListener=null;}
   if(typingListener){typingListener();typingListener=null;}
+  if(reactionListener){reactionListener();reactionListener=null;}
   clearReply();
 });
 
@@ -492,8 +514,6 @@ document.getElementById('back-btn').addEventListener('click',()=>{
 function loadDM(peerUid){
   const container=document.getElementById('messages');
   container.innerHTML='';
-
-  if(msgListener){msgListener();msgListener=null;}
 
   const key=dmKey(myUser.uid,peerUid);
   const ref=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`);
@@ -512,17 +532,17 @@ function appendMsg(msgId, msg){
   row.dataset.msgId=msgId;
 
   let replyHtml='';
-  if(msg.replyTo){
-    replyHtml=`<div class="reply-ref">↩️ ${esc(msg.replyTo.text.substring(0,60))}</div>`;
+  if(msg.replyTo && msg.replyTo.text){
+    replyHtml=`<div class="reply-ref">↩ ${esc(msg.replyTo.text.substring(0,50))}${msg.replyTo.text.length>50?'...':''}</div>`;
   }
 
   row.innerHTML=`
-    <div class="bubble" data-msgid="${msgId}">
+    <div class="bubble">
       ${replyHtml}${esc(msg.text)}
       <div class="btime">${t}</div>
     </div>`;
 
-  // Reaction badge
+  // Add reaction badge if exists
   if(msg.reaction){
     const badge=document.createElement('div');
     badge.className='reaction-badge';
@@ -533,109 +553,133 @@ function appendMsg(msgId, msg){
   c.appendChild(row);
   c.scrollTop=c.scrollHeight;
 
-  // Attach long-press + click handlers to bubble
+  // Attach event handlers
   const bubble=row.querySelector('.bubble');
   attachBubbleEvents(bubble, msgId, msg);
 }
 
 function attachBubbleEvents(bubble, msgId, msg){
-  // Long press for reaction
-  bubble.addEventListener('touchstart',(e)=>startLongPress(e, bubble, msgId),{passive:false});
-  bubble.addEventListener('touchend',cancelLongPress);
-  bubble.addEventListener('touchmove',cancelLongPress);
-  bubble.addEventListener('mousedown',(e)=>startLongPress(e, bubble, msgId));
-  bubble.addEventListener('mouseup',cancelLongPress);
-  bubble.addEventListener('mouseleave',cancelLongPress);
+  // Touch events for long press
+  bubble.addEventListener('touchstart',function(e){startLongPress(e, bubble, msgId);},{passive:false});
+  bubble.addEventListener('touchend',function(e){endLongPress(e, bubble, msgId, msg);});
+  bubble.addEventListener('touchmove',function(){cancelLongPress();});
 
-  // Click for reply (when not long-pressing)
-  bubble.addEventListener('click',(e)=>{
-    if(longPressTimer)return; // was a long press, ignore
-    setReply(msgId, msg);
-  });
+  // Mouse events for long press (desktop)
+  bubble.addEventListener('mousedown',function(e){startLongPress(e, bubble, msgId);});
+  bubble.addEventListener('mouseup',function(e){endLongPress(e, bubble, msgId, msg);});
+  bubble.addEventListener('mouseleave',function(){cancelLongPress();});
 }
 
 // ── LONG PRESS / REACTION ──
 function startLongPress(e, bubble, msgId){
   if(e.type==='touchstart')e.preventDefault();
+  longPressTriggered=false;
   currentReactionMsgId=msgId;
   longPressTimer=setTimeout(()=>{
+    longPressTriggered=true;
     longPressTimer=null;
     showReactionPicker(bubble, msgId);
-  }, 500);
+  }, 600);
 }
+
+function endLongPress(e, bubble, msgId, msg){
+  if(longPressTimer){
+    clearTimeout(longPressTimer);
+    longPressTimer=null;
+  }
+  if(!longPressTriggered){
+    // It was a short tap - trigger reply
+    setReply(msgId, msg);
+  }
+  longPressTriggered=false;
+}
+
 function cancelLongPress(){
-  if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;}
+  if(longPressTimer){
+    clearTimeout(longPressTimer);
+    longPressTimer=null;
+  }
+  longPressTriggered=false;
 }
 
 function showReactionPicker(bubble, msgId){
   const picker=document.getElementById('react-picker');
+  const overlay=document.getElementById('react-picker-overlay');
   const rect=bubble.getBoundingClientRect();
-  const msgContainer=document.getElementById('messages');
-  const containerRect=msgContainer.getBoundingClientRect();
 
   // Position picker above the bubble
-  let top=bubble.offsetTop - 50;
-  let left=bubble.offsetLeft + bubble.offsetWidth/2;
+  let top=rect.top - 60;
+  let left=rect.left + rect.width/2;
 
-  picker.style.position='absolute';
+  // Keep in viewport
+  if(top<10)top=rect.bottom+10;
+  if(left<80)left=80;
+  if(left>window.innerWidth-80)left=window.innerWidth-80;
+
   picker.style.top=top+'px';
   picker.style.left=left+'px';
-  picker.style.transform='translateX(-50%)';
-  picker.classList.add('show');
-
-  // Store msgId for emoji click
   picker.dataset.msgId=msgId;
+  picker.classList.add('show');
+  overlay.style.display='block';
 
-  // Close picker after a few seconds or on outside click
-  setTimeout(()=>picker.classList.remove('show'), 4000);
+  // Auto-hide after 3s
+  clearTimeout(picker._hideTimeout);
+  picker._hideTimeout=setTimeout(hideReactionPicker, 3000);
 }
 
-// Handle emoji selection
+function hideReactionPicker(){
+  document.getElementById('react-picker').classList.remove('show');
+  document.getElementById('react-picker-overlay').style.display='none';
+  currentReactionMsgId=null;
+}
+
+// Reaction picker overlay click to close
+document.getElementById('react-picker-overlay').addEventListener('click',hideReactionPicker);
+
+// Emoji selection
 document.querySelectorAll('#react-picker span').forEach(span=>{
-  span.addEventListener('click',(e)=>{
+  span.addEventListener('click',function(e){
     e.stopPropagation();
     const picker=document.getElementById('react-picker');
     const msgId=picker.dataset.msgId;
-    const emoji=span.dataset.emoji;
+    const emoji=this.dataset.emoji;
     if(!msgId || !activePeerUid)return;
 
     const key=dmKey(myUser.uid, activePeerUid);
-    // Set or toggle reaction
-    db.ref(`rooms/${ROOM_ID}/dms/${key}/messages/${msgId}/reaction`).transaction(current=>{
-      return current===emoji ? null : emoji;
+    const msgRef=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages/${msgId}`);
+
+    // Toggle reaction: set if different, remove if same
+    msgRef.once('value').then(snap=>{
+      const current=snap.val();
+      if(current && current.reaction===emoji){
+        msgRef.child('reaction').remove();
+      }else{
+        msgRef.child('reaction').set(emoji);
+      }
     });
 
-    picker.classList.remove('show');
-    currentReactionMsgId=null;
+    hideReactionPicker();
   });
 });
 
-// Close picker on outside click
-document.addEventListener('click',(e)=>{
-  const picker=document.getElementById('react-picker');
-  if(!picker.contains(e.target)){
-    picker.classList.remove('show');
-  }
-});
-
-// Watch for reaction changes
+// Watch for reaction updates
 function watchReactions(peerUid){
   const key=dmKey(myUser.uid, peerUid);
-  db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`).on('child_changed',snap=>{
+  const ref=db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`);
+  const handler=ref.on('child_changed',snap=>{
     const msgId=snap.key;
     const msg=snap.val();
     updateReactionBadge(msgId, msg.reaction);
   });
+  reactionListener=()=>ref.off('child_changed',handler);
 }
 
 function updateReactionBadge(msgId, reaction){
   const row=document.querySelector(`.msg-row[data-msg-id="${msgId}"]`);
   if(!row)return;
   const bubble=row.querySelector('.bubble');
-  // Remove existing badge
   const existing=bubble.querySelector('.reaction-badge');
   if(existing)existing.remove();
-  // Add new badge if reaction exists
   if(reaction){
     const badge=document.createElement('div');
     badge.className='reaction-badge';
@@ -648,7 +692,7 @@ function updateReactionBadge(msgId, reaction){
 function setReply(msgId, msg){
   replyToMsgId=msgId;
   replyToText=msg.text;
-  document.getElementById('rp-text').textContent=msg.text.substring(0,80);
+  document.getElementById('rp-text').textContent=msg.text.substring(0,70)+(msg.text.length>70?'...':'');
   document.getElementById('reply-preview').style.display='flex';
   document.getElementById('msg-input').focus();
 }
@@ -662,6 +706,7 @@ function clearReply(){
 
 document.getElementById('rp-cancel').addEventListener('click',clearReply);
 
+// ── SEND MESSAGE ──
 function sendMsg(){
   if(!activePeerUid)return;
   const inp=document.getElementById('msg-input');
@@ -674,7 +719,7 @@ function sendMsg(){
     timestamp:Date.now()
   };
 
-  // Attach reply info if replying
+  // Attach reply info
   if(replyToMsgId && replyToText){
     msgData.replyTo={
       msgId: replyToMsgId,
@@ -683,14 +728,15 @@ function sendMsg(){
   }
 
   db.ref(`rooms/${ROOM_ID}/dms/${key}/messages`).push(msgData);
-
   inp.value=''; inp.style.height='42px';
   clearReply();
   clearTyping();
 }
 
 document.getElementById('send-btn').addEventListener('click',sendMsg);
-document.getElementById('msg-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
+document.getElementById('msg-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
+});
 document.getElementById('msg-input').addEventListener('input',function(){
   this.style.height='42px';
   this.style.height=Math.min(this.scrollHeight,120)+'px';
@@ -699,7 +745,6 @@ document.getElementById('msg-input').addEventListener('input',function(){
 
 function showTyping(){
   if(!activePeerUid)return;
-  const uname=myUser.displayName||myUser.email.split('@')[0];
   const key=dmKey(myUser.uid,activePeerUid);
   db.ref(`rooms/${ROOM_ID}/dms/${key}/typing/${myUser.uid}`).set({ts:Date.now()});
   clearTimeout(typingTimer);
@@ -800,13 +845,6 @@ document.getElementById('cam-btn').addEventListener('click',()=>{
   localStream.getVideoTracks().forEach(t=>t.enabled=!isCamOff);
   document.getElementById('cam-btn').textContent=isCamOff?'📵':'📷';
 });
-
-// Also watch reactions when opening chat
-const origOpenChat=openChat;
-openChat=function(uid,uname){
-  origOpenChat(uid,uname);
-  watchReactions(uid);
-};
 
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 </script>
